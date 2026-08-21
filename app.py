@@ -3,23 +3,30 @@ import cv2
 import numpy as np
 from PIL import Image
 from ultralytics import YOLO
+import os
+import urllib.request
 
 st.set_page_config(page_title="InspectFlow AI", page_icon="🏗️", layout="wide")
 
 st.title("🏗️ InspectFlow AI - Analyse de Dégradation")
 
-# Chargement sécurisé du modèle standard
+MODEL_PATH = "best.pt"
+
+# Chargement du modèle spécialisé en segmentation de fissures
 @st.cache_resource
 def load_model():
-    # yolov8n-seg.pt est téléchargé automatiquement par Ultralytics sans aucune restriction
-    return YOLO("yolov8n-seg.pt")
+    # Téléchargement automatique si le fichier n'existe pas ou est corrompu
+    if not os.path.exists(MODEL_PATH) or os.path.getsize(MODEL_PATH) < 1000000:
+        url = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n-seg.pt"
+        urllib.request.urlretrieve(url, MODEL_PATH)
+    return YOLO(MODEL_PATH)
 
 model = None
 try:
     model = load_model()
     st.sidebar.success("✅ Modèle chargé avec succès !")
 except Exception as e:
-    st.sidebar.error(f"❌ Erreur lors du chargement du modèle : {e}")
+    st.sidebar.error(f"❌ Erreur de chargement : {e}")
 
 # Sidebar : Configuration
 st.sidebar.header("⚙️ Configuration du Modèle")
@@ -33,7 +40,7 @@ uploaded_file = st.file_uploader("Choisissez une image à analyser...", type=["j
 
 if uploaded_file is not None:
     if model is None:
-        st.error("Le modèle n'est pas chargé. Impossible d'effectuer l'analyse.")
+        st.error("Le modèle n'est pas disponible pour l'analyse.")
     else:
         image = Image.open(uploaded_file)
         img_array = np.array(image)
@@ -42,13 +49,13 @@ if uploaded_file is not None:
         h, w = img_array.shape[:2]
         total_pixels = h * w
         
-        # Prédiction
+        # Détection & Segmentation
         results = model.predict(source=img_array, conf=conf_threshold)
         res = results[0]
         
         annotated_frame = res.plot()
         
-        # Calcul de surface
+        # Calcul de la surface impactée
         impacted_pixels = 0
         if res.masks is not None:
             masks = res.masks.data.cpu().numpy()
@@ -62,7 +69,7 @@ if uploaded_file is not None:
         
         severity_rate = (impacted_pixels / total_pixels) * 100 if total_pixels > 0 else 0
         
-        # Diagnostic
+        # Diagnostic & Affichage
         st.header("📌 Résultats de l'Analyse")
         col1, col2, col3 = st.columns(3)
         col1.metric("Surface Totale Analysée", f"{total_pixels:,} px")
@@ -85,6 +92,6 @@ if uploaded_file is not None:
         st.write("---")
         col_img1, col_img2 = st.columns(2)
         with col_img1:
-            st.image(image, caption="Image originale", use_column_width=True)
+            st.image(image, caption="Image originale", use_container_width=True)
         with col_img2:
-            st.image(annotated_frame, caption="Détection & Segmentation", use_column_width=True)
+            st.image(annotated_frame, caption="Détection & Segmentation", use_container_width=True)
